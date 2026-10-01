@@ -65,3 +65,4 @@ notifier.js
 client.ts
 nestjs_notifications_tester.html
 requests.http
+database.sqlite
