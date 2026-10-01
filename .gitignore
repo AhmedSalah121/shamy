@@ -63,3 +63,5 @@ image.png
 logo.png
 notifier.js
 client.ts
+nestjs_notifications_tester.html
+requests.http
