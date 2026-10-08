@@ -33,19 +33,47 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
   }
   // Clients emit this upon connecting to register their user ID
   @SubscribeMessage('register_user')
-  handleRegisterUser(
+  async handleRegisterUser(
     @ConnectedSocket() client: Socket,
     @MessageBody() userId: string,
   ) {
-    client.join(userId);
-    return { status: 'joined', room: userId };
+    await client.join(String(userId));
+    return { status: 'joined', room: String(userId) };
+  }
+
+  // Clients emit this to receive real-time updates for a specific order
+  @SubscribeMessage('join_order')
+  async handleJoinOrder(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() orderId: number | string,
+  ) {
+    const room = `order_${orderId}`;
+    await client.join(room);
+    return { status: 'joined', room };
+  }
+
+  // Broadcasts event to all participants listening to a specific order and globally for front-page updates
+  broadcastToOrder(orderId: number | string, event: string, data: any) {
+    if (this.server) {
+      this.server.to(`order_${orderId}`).emit(event, data);
+      this.server.emit(event, data);
+    }
+  }
+
+  // Broadcasts event globally to all connected clients (e.g. front-page active orders)
+  broadcastGlobal(event: string, data: any) {
+    if (this.server) {
+      this.server.emit(event, data);
+    }
   }
 
   async sendNotificationToUser(dto: CreateNotificationDto): Promise<Notification> {
     const notification = await this.notificationsService.createNotification(dto);
 
-    // Broadcast only to the room matching the receiver's ID
-    this.server.to(dto.reciever).emit('new_notification', notification);
+    // Broadcast to the room matching the receiver's ID
+    if (this.server) {
+      this.server.to(String(dto.reciever)).emit('new_notification', notification);
+    }
 
     return notification;
   }

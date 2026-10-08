@@ -1,10 +1,11 @@
-import { ArgsType, Field } from '@nestjs/graphql';
+import { IsNotEmpty, IsString } from 'class-validator';
 
-@ArgsType()
 export class CreateNotificationDto {
-    @Field()
+    @IsNotEmpty()
+    @IsString()
     sender: string;
 
-    @Field()
+    @IsNotEmpty()
+    @IsString()
     reciever: string;
 }
