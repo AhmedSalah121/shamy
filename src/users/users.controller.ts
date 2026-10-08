@@ -1,64 +1,82 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
-  Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
-import { UsersService } from "./users.service";
+import { UsersService } from './users.service';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from './user.entity';
 
 @Controller('users')
 export class UsersController {
-    constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) {}
 
-    // POST /users
-    @Post()
-    async create(
-        @Body('name') name: string,
-        @Body('email') email: string,
-    ): Promise<User> {
-        if (!name?.trim() || !email?.trim()) {
-            throw new BadRequestException('name and email are required');
-        }
-
-        return await this.usersService.create(name.trim(), email.trim());
-    }
-
-    // GET /users
-    @Get('all')
-    async fetch(): Promise<User[]> {
-        return await this.usersService.findAll();
-    }
-
-  // GET /users/search?domain=gmail.com
+  // GET /users/search?query=alice
+  @UseGuards(JwtAuthGuard)
   @Get('search')
-  async searchByDomain(@Query('domain') domain: string): Promise<User[]> {
-    return await this.usersService.findCustom(domain);
+  async search(@Query('query') query: string) {
+    if (!query) return [];
+    return await this.usersService.searchUsers(query);
   }
 
-  // GET /users/email/user@example.com
+  // GET /users/all (authenticated)
+  @UseGuards(JwtAuthGuard)
+  @Get('all')
+  async fetch() {
+    return await this.usersService.findAll();
+  }
+
+  // GET /users/email/:email
+  @UseGuards(JwtAuthGuard)
   @Get('email/:email')
-  async findByEmail(@Param('email') email: string): Promise<User | null> {
-    return await this.usersService.findByEmail(email);
+  async findByEmail(@Param('email') email: string) {
+    const user = await this.usersService.findByEmail(email);
+    if (!user) return null;
+    const { password: _password, ...safeUser } = user;
+    return safeUser;
   }
 
-  // PATCH /users/:id
-  @Patch(':id')
-  async update(
-    @Param('id') id: string,
-    @Body('name') name: string,
-  ): Promise<void> {
-    return await this.usersService.updateUser(+id, name);
+  // GET /users/:id
+  @UseGuards(JwtAuthGuard)
+  @Get(':id')
+  async findById(@Param('id', ParseIntPipe) id: number) {
+    const user = await this.usersService.findById(id);
+    if (!user) return null;
+    const { password: _password, ...safeUser } = user;
+    return safeUser;
+  }
+
+  // PATCH /users/me
+  @UseGuards(JwtAuthGuard)
+  @Patch('me')
+  async updateProfile(
+    @CurrentUser() currentUser: User,
+    @Body('name') name?: string,
+    @Body('avatar') avatar?: string,
+    @Body('instapayHandle') instapayHandle?: string,
+    @Body('phoneNumber') phoneNumber?: string,
+  ) {
+    const updated = await this.usersService.updateUser(currentUser.id, {
+      name,
+      avatar,
+      instapayHandle,
+      phoneNumber,
+    });
+    const { password: _password, ...safeUser } = updated;
+    return safeUser;
   }
 
   // DELETE /users/:id
+  @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  async remove(@Param('id') id: string): Promise<void> {
-    return await this.usersService.deleteUser(+id);
+  async remove(@Param('id', ParseIntPipe) id: number) {
+    return await this.usersService.deleteUser(id);
   }
 }
