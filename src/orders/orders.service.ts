@@ -4,18 +4,24 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import * as crypto from 'crypto';
 
-import { Order, OrderStatus, OrderVisibility } from './entities/order.entity';
-import { OrderAdmin } from './entities/order-admin.entity';
-import { OrderParticipant } from './entities/order-participant.entity';
-import { OrderItem } from './entities/order-item.entity';
-import { Reimbursement, ReimbursementStatus, PaymentMethod } from './entities/reimbursement.entity';
-import { OrderFrontPayer } from './entities/order-front-payer.entity';
-import { User } from '../users/user.entity';
+import {
+  FeeSplitType,
+  Order,
+  OrderAdmin,
+  OrderFrontPayer,
+  OrderItem,
+  OrderParticipant,
+  OrderStatus,
+  OrderVisibility,
+  PaymentMethod,
+  Reimbursement,
+  ReimbursementStatus,
+  User,
+} from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -29,20 +35,7 @@ import { AddFrontPayerDto } from './dto/front-payer.dto';
 @Injectable()
 export class OrdersService {
   constructor(
-    @InjectRepository(Order)
-    private readonly orderRepo: Repository<Order>,
-    @InjectRepository(OrderAdmin)
-    private readonly adminRepo: Repository<OrderAdmin>,
-    @InjectRepository(OrderParticipant)
-    private readonly participantRepo: Repository<OrderParticipant>,
-    @InjectRepository(OrderItem)
-    private readonly itemRepo: Repository<OrderItem>,
-    @InjectRepository(Reimbursement)
-    private readonly reimbursementRepo: Repository<Reimbursement>,
-    @InjectRepository(OrderFrontPayer)
-    private readonly frontPayerRepo: Repository<OrderFrontPayer>,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
+    private readonly prisma: PrismaService,
     private readonly gateway: NotificationsGateway,
   ) {}
 
@@ -56,35 +49,35 @@ export class OrdersService {
         ? crypto.randomBytes(6).toString('hex')
         : undefined;
 
-    const order = this.orderRepo.create({
-      title: dto.title,
-      description: dto.description,
-      visibility: dto.visibility || OrderVisibility.PUBLIC,
-      vipPassword: dto.vipPassword,
-      vipInviteCode: inviteCode,
-      deadline: dto.deadline ? new Date(dto.deadline) : undefined,
-      deliveryFee: dto.deliveryFee ?? 0,
-      serviceFee: dto.serviceFee ?? 0,
-      discount: dto.discount ?? 0,
-      restaurantName: dto.restaurantName,
-      restaurantPhone: dto.restaurantPhone,
-      menuUrl: dto.menuUrl,
-      menuImageUrl: dto.menuImageUrl,
-      hideParticipantItems: dto.hideParticipantItems ?? false,
-      creatorId,
-      pickupHeroId: dto.pickupHeroId,
-      status: OrderStatus.OPEN,
+    const savedOrder = await this.prisma.order.create({
+      data: {
+        title: dto.title,
+        description: dto.description,
+        visibility: dto.visibility || OrderVisibility.PUBLIC,
+        vipPassword: dto.vipPassword,
+        vipInviteCode: inviteCode,
+        deadline: dto.deadline ? new Date(dto.deadline) : undefined,
+        deliveryFee: dto.deliveryFee ?? 0,
+        serviceFee: dto.serviceFee ?? 0,
+        discount: dto.discount ?? 0,
+        restaurantName: dto.restaurantName,
+        restaurantPhone: dto.restaurantPhone,
+        menuUrl: dto.menuUrl,
+        menuImageUrl: dto.menuImageUrl,
+        hideParticipantItems: dto.hideParticipantItems ?? false,
+        creatorId,
+        pickupHeroId: dto.pickupHeroId,
+        status: OrderStatus.OPEN,
+      },
     });
 
-    const savedOrder = await this.orderRepo.save(order);
-
     // Auto-join creator as initial participant
-    await this.participantRepo.save(
-      this.participantRepo.create({
+    await this.prisma.orderParticipant.create({
+      data: {
         orderId: savedOrder.id,
         userId: creatorId,
-      }),
-    );
+      },
+    });
 
     this.gateway.broadcastGlobal('order_created', {
       orderId: savedOrder.id,
@@ -97,42 +90,70 @@ export class OrdersService {
   }
 
   async getOrders(userId?: number): Promise<Order[]> {
-    const query = this.orderRepo
-      .createQueryBuilder('order')
-      .leftJoinAndSelect('order.creator', 'creator')
-      .leftJoinAndSelect('order.pickupHero', 'pickupHero')
-      .leftJoinAndSelect('order.admins', 'admins')
-      .leftJoinAndSelect('admins.user', 'adminUser')
-      .leftJoinAndSelect('order.participants', 'participants')
-      .leftJoinAndSelect('participants.user', 'participantUser')
-      .orderBy('order.createdAt', 'DESC');
+    const whereCondition: any = {
+      deleted_at: null,
+    };
 
     if (userId) {
-      query.where(
-        'order.visibility = :public OR order.creatorId = :userId OR admins.userId = :userId OR participants.userId = :userId',
-        { public: OrderVisibility.PUBLIC, userId },
-      );
+      whereCondition.OR = [
+        { visibility: OrderVisibility.PUBLIC },
+        { creatorId: userId },
+        { admins: { some: { userId, deleted_at: null } } },
+        { participants: { some: { userId, deleted_at: null } } },
+      ];
     } else {
-      query.where('order.visibility = :public', { public: OrderVisibility.PUBLIC });
+      whereCondition.visibility = OrderVisibility.PUBLIC;
     }
 
-    const orders = await query.getMany();
+    const orders = await this.prisma.order.findMany({
+      where: whereCondition,
+      include: {
+        creator: true,
+        pickupHero: true,
+        admins: {
+          where: { deleted_at: null },
+          include: { user: true },
+        },
+        participants: {
+          where: { deleted_at: null },
+          include: { user: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
     return orders.map((o) => {
       const { vipPassword: _vipPassword, ...safe } = o;
-      return safe as Order;
+      return safe as unknown as Order;
     });
   }
 
   async getOrderDetails(orderId: number, requestingUserId?: number): Promise<any> {
-    const order = await this.orderRepo.findOne({
-      where: { id: orderId },
-      relations: {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, deleted_at: null },
+      include: {
         creator: true,
         pickupHero: true,
-        admins: { user: true },
-        participants: { user: true },
-        items: { participant: { user: true } },
-        frontPayers: { user: true },
+        admins: {
+          where: { deleted_at: null },
+          include: { user: true },
+        },
+        participants: {
+          where: { deleted_at: null },
+          include: { user: true },
+        },
+        items: {
+          where: { deleted_at: null },
+          include: {
+            participant: {
+              include: { user: true },
+            },
+          },
+        },
+        frontPayers: {
+          where: { deleted_at: null },
+          include: { user: true },
+        },
       },
     });
 
@@ -222,24 +243,29 @@ export class OrdersService {
   // ---------------------------------------------------------------------------
 
   async updateOrder(orderId: number, userId: number, dto: UpdateOrderDto): Promise<Order> {
-    const order = await this.getOrderForManagement(orderId, userId);
+    await this.getOrderForManagement(orderId, userId);
 
-    if (dto.title !== undefined) order.title = dto.title;
-    if (dto.description !== undefined) order.description = dto.description;
-    if (dto.visibility !== undefined) order.visibility = dto.visibility;
-    if (dto.vipPassword !== undefined) order.vipPassword = dto.vipPassword;
-    if (dto.deadline !== undefined) order.deadline = dto.deadline ? new Date(dto.deadline) : undefined;
-    if (dto.deliveryFee !== undefined) order.deliveryFee = dto.deliveryFee;
-    if (dto.serviceFee !== undefined) order.serviceFee = dto.serviceFee;
-    if (dto.discount !== undefined) order.discount = dto.discount;
-    if (dto.restaurantName !== undefined) order.restaurantName = dto.restaurantName;
-    if (dto.restaurantPhone !== undefined) order.restaurantPhone = dto.restaurantPhone;
-    if (dto.menuUrl !== undefined) order.menuUrl = dto.menuUrl;
-    if (dto.menuImageUrl !== undefined) order.menuImageUrl = dto.menuImageUrl;
-    if (dto.hideParticipantItems !== undefined) order.hideParticipantItems = dto.hideParticipantItems;
-    if (dto.pickupPersonId !== undefined) order.pickupHeroId = dto.pickupPersonId;
+    const data: any = {};
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.visibility !== undefined) data.visibility = dto.visibility;
+    if (dto.vipPassword !== undefined) data.vipPassword = dto.vipPassword;
+    if (dto.deadline !== undefined) data.deadline = dto.deadline ? new Date(dto.deadline) : null;
+    if (dto.deliveryFee !== undefined) data.deliveryFee = dto.deliveryFee;
+    if (dto.serviceFee !== undefined) data.serviceFee = dto.serviceFee;
+    if (dto.discount !== undefined) data.discount = dto.discount;
+    if (dto.restaurantName !== undefined) data.restaurantName = dto.restaurantName;
+    if (dto.restaurantPhone !== undefined) data.restaurantPhone = dto.restaurantPhone;
+    if (dto.menuUrl !== undefined) data.menuUrl = dto.menuUrl;
+    if (dto.menuImageUrl !== undefined) data.menuImageUrl = dto.menuImageUrl;
+    if (dto.hideParticipantItems !== undefined) data.hideParticipantItems = dto.hideParticipantItems;
+    if (dto.pickupPersonId !== undefined) data.pickupHeroId = dto.pickupPersonId;
 
-    const saved = await this.orderRepo.save(order);
+    const saved = await this.prisma.order.update({
+      where: { id: orderId },
+      data,
+    });
+
     this.gateway.broadcastToOrder(orderId, 'order_updated', { orderId, order: saved });
     return saved;
   }
@@ -251,10 +277,10 @@ export class OrdersService {
     fee?: number,
   ): Promise<{ order: Order; bills?: any }> {
     const order = await this.getOrderForManagement(orderId, userId);
-    order.status = newStatus;
 
+    const data: any = { status: newStatus };
     if (fee !== undefined && fee !== null) {
-      order.deliveryFee = fee;
+      data.deliveryFee = fee;
     }
 
     // Auto-pick a Pickup Hero if order locks or transitions and none was picked yet
@@ -264,10 +290,16 @@ export class OrdersService {
         newStatus === OrderStatus.ORDERED ||
         newStatus === OrderStatus.SETTLING)
     ) {
-      await this.tryAutoAssignPickupHero(order);
+      const heroId = await this.tryAutoAssignPickupHero(order);
+      if (heroId) {
+        data.pickupHeroId = heroId;
+      }
     }
 
-    const saved = await this.orderRepo.save(order);
+    const saved = await this.prisma.order.update({
+      where: { id: orderId },
+      data,
+    });
 
     let bills: any = null;
     if (newStatus === OrderStatus.SETTLING) {
@@ -296,36 +328,41 @@ export class OrdersService {
   }
 
   async assignAdmin(orderId: number, creatorId: number, targetUserId: number): Promise<OrderAdmin> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
     if (order.creatorId !== creatorId) {
       throw new ForbiddenException('Only the order creator can assign co-admins');
     }
 
-    const targetUser = await this.userRepo.findOne({ where: { id: targetUserId } });
+    const targetUser = await this.prisma.user.findFirst({ where: { id: targetUserId, deleted_at: null } });
     if (!targetUser) throw new NotFoundException(`User #${targetUserId} not found`);
 
-    const existingAdmin = await this.adminRepo.findOne({
-      where: { orderId, userId: targetUserId },
+    const existingAdmin = await this.prisma.orderAdmin.findFirst({
+      where: { orderId, userId: targetUserId, deleted_at: null },
     });
 
     if (existingAdmin) return existingAdmin;
 
-    const admin = this.adminRepo.create({ orderId, userId: targetUserId });
-    const saved = await this.adminRepo.save(admin);
+    const saved = await this.prisma.orderAdmin.create({
+      data: { orderId, userId: targetUserId },
+    });
 
     this.gateway.broadcastToOrder(orderId, 'admin_assigned', { orderId, userId: targetUserId });
     return saved;
   }
 
   async removeAdmin(orderId: number, creatorId: number, targetUserId: number): Promise<void> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
     if (order.creatorId !== creatorId) {
       throw new ForbiddenException('Only the order creator can remove co-admins');
     }
 
-    await this.adminRepo.delete({ orderId, userId: targetUserId });
+    await this.prisma.orderAdmin.updateMany({
+      where: { orderId, userId: targetUserId, deleted_at: null },
+      data: { deleted_at: new Date() },
+    });
+
     this.gateway.broadcastToOrder(orderId, 'admin_removed', { orderId, userId: targetUserId });
   }
 
@@ -334,7 +371,7 @@ export class OrdersService {
   // ---------------------------------------------------------------------------
 
   async joinOrder(orderId: number, userId: number, dto: JoinOrderDto): Promise<OrderParticipant> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
 
     if (order.status !== OrderStatus.OPEN) {
@@ -355,14 +392,16 @@ export class OrdersService {
       }
     }
 
-    let participant = await this.participantRepo.findOne({
-      where: { orderId, userId },
-      relations: { user: true },
+    let participant = await this.prisma.orderParticipant.findFirst({
+      where: { orderId, userId, deleted_at: null },
+      include: { user: true },
     });
 
     if (!participant) {
-      participant = this.participantRepo.create({ orderId, userId });
-      participant = await this.participantRepo.save(participant);
+      participant = await this.prisma.orderParticipant.create({
+        data: { orderId, userId },
+        include: { user: true },
+      });
       this.gateway.broadcastToOrder(orderId, 'participant_joined', { orderId, userId });
     }
 
@@ -370,7 +409,7 @@ export class OrdersService {
   }
 
   async leaveOrder(orderId: number, userId: number): Promise<void> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
 
     if (order.status !== OrderStatus.OPEN) {
@@ -385,12 +424,15 @@ export class OrdersService {
       throw new BadRequestException('Order creator cannot leave the order. Cancel or transfer order instead.');
     }
 
-    const participant = await this.participantRepo.findOne({
-      where: { orderId, userId },
+    const participant = await this.prisma.orderParticipant.findFirst({
+      where: { orderId, userId, deleted_at: null },
     });
 
     if (participant) {
-      await this.participantRepo.remove(participant);
+      await this.prisma.orderParticipant.update({
+        where: { id: participant.id },
+        data: { deleted_at: new Date() },
+      });
       this.gateway.broadcastToOrder(orderId, 'participant_left', { orderId, userId });
     }
   }
@@ -403,12 +445,15 @@ export class OrdersService {
     orderId: number,
     requestingUserId: number,
   ): Promise<{ hero: any; order: Order; message: string }> {
-    const order = await this.getOrderForManagement(orderId, requestingUserId);
+    await this.getOrderForManagement(orderId, requestingUserId);
 
-    const fullOrder = await this.orderRepo.findOne({
-      where: { id: orderId },
-      relations: {
-        participants: { user: true },
+    const fullOrder = await this.prisma.order.findFirst({
+      where: { id: orderId, deleted_at: null },
+      include: {
+        participants: {
+          where: { deleted_at: null },
+          include: { user: true },
+        },
         creator: true,
       },
     });
@@ -417,7 +462,7 @@ export class OrdersService {
 
     // Except the order creator
     const eligibleParticipants = (fullOrder.participants || []).filter(
-      (p) => p.userId !== fullOrder.creatorId && p.user,
+      (p) => p.userId !== fullOrder.creatorId && p.user && !p.user.deleted_at,
     );
 
     if (eligibleParticipants.length === 0) {
@@ -430,8 +475,10 @@ export class OrdersService {
     const randomIndex = Math.floor(Math.random() * eligibleParticipants.length);
     const selected = eligibleParticipants[randomIndex];
 
-    order.pickupHeroId = selected.userId;
-    const saved = await this.orderRepo.save(order);
+    const saved = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { pickupHeroId: selected.userId },
+    });
 
     const heroUser = selected.user;
     const heroInfo = {
@@ -466,17 +513,21 @@ export class OrdersService {
     return { hero: heroInfo, order: saved, message };
   }
 
-  private async tryAutoAssignPickupHero(order: Order): Promise<void> {
-    const participants = await this.participantRepo.find({
-      where: { orderId: order.id },
-      relations: { user: true },
+  private async tryAutoAssignPickupHero(order: Order): Promise<number | undefined> {
+    const participants = await this.prisma.orderParticipant.findMany({
+      where: { orderId: order.id, deleted_at: null },
+      include: { user: true },
     });
 
-    const eligible = participants.filter((p) => p.userId !== order.creatorId && p.user);
+    const eligible = participants.filter(
+      (p) => p.userId !== order.creatorId && p.user && !p.user.deleted_at,
+    );
     if (eligible.length > 0) {
       const selected = eligible[Math.floor(Math.random() * eligible.length)];
-      order.pickupHeroId = selected.userId;
-      await this.orderRepo.save(order);
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: { pickupHeroId: selected.userId },
+      });
 
       const heroUser = selected.user;
       this.gateway.broadcastToOrder(order.id, 'pickup_hero_selected', {
@@ -489,7 +540,10 @@ export class OrdersService {
         },
         message: `🎉 ${heroUser.name} was randomly selected as the Pickup Hero for this order!`,
       });
+
+      return selected.userId;
     }
+    return undefined;
   }
 
   // ---------------------------------------------------------------------------
@@ -500,13 +554,18 @@ export class OrdersService {
     orderId: number,
     requestingUserId: number,
   ): Promise<{ success: boolean; message: string; order: Order }> {
-    const order = await this.orderRepo.findOne({
-      where: { id: orderId },
-      relations: {
-        participants: { user: true },
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, deleted_at: null },
+      include: {
+        participants: {
+          where: { deleted_at: null },
+          include: { user: true },
+        },
         creator: true,
         pickupHero: true,
-        admins: true,
+        admins: {
+          where: { deleted_at: null },
+        },
       },
     });
 
@@ -522,8 +581,10 @@ export class OrdersService {
       );
     }
 
-    order.status = OrderStatus.DELIVERED;
-    const saved = await this.orderRepo.save(order);
+    const saved = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { status: OrderStatus.DELIVERED },
+    });
 
     const message = 'Order Arrived! 🥐 Food is downstairs/in the pantry, come grab your breakfast!';
 
@@ -565,7 +626,7 @@ export class OrdersService {
   // ---------------------------------------------------------------------------
 
   async addItem(orderId: number, userId: number, dto: AddItemDto): Promise<OrderItem> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
 
     if (order.status !== OrderStatus.OPEN) {
@@ -576,24 +637,25 @@ export class OrdersService {
       throw new BadRequestException('Order deadline has passed. You cannot add items.');
     }
 
-    let participant = await this.participantRepo.findOne({
-      where: { orderId, userId },
+    let participant = await this.prisma.orderParticipant.findFirst({
+      where: { orderId, userId, deleted_at: null },
     });
 
     if (!participant) {
       participant = await this.joinOrder(orderId, userId, {});
     }
 
-    const item = this.itemRepo.create({
-      orderId,
-      participantId: participant.id,
-      name: dto.name,
-      quantity: dto.quantity,
-      unitPrice: dto.unitPrice,
-      notes: dto.notes,
+    const saved = await this.prisma.orderItem.create({
+      data: {
+        orderId,
+        participantId: participant.id,
+        name: dto.name,
+        quantity: dto.quantity,
+        unitPrice: dto.unitPrice,
+        notes: dto.notes,
+      },
     });
 
-    const saved = await this.itemRepo.save(item);
     this.gateway.broadcastToOrder(orderId, 'item_added', {
       orderId,
       item: {
@@ -617,7 +679,7 @@ export class OrdersService {
     userId: number,
     dto: UpdateItemDto,
   ): Promise<OrderItem> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
 
     if (order.status !== OrderStatus.OPEN) {
@@ -628,9 +690,9 @@ export class OrdersService {
       throw new BadRequestException('Order deadline has passed. You cannot update items.');
     }
 
-    const item = await this.itemRepo.findOne({
-      where: { id: itemId, orderId },
-      relations: { participant: true },
+    const item = await this.prisma.orderItem.findFirst({
+      where: { id: itemId, orderId, deleted_at: null },
+      include: { participant: true },
     });
 
     if (!item) throw new NotFoundException(`Item #${itemId} not found in order #${orderId}`);
@@ -642,18 +704,23 @@ export class OrdersService {
       throw new ForbiddenException('You do not have permission to modify this item');
     }
 
-    if (dto.name !== undefined) item.name = dto.name;
-    if (dto.quantity !== undefined) item.quantity = dto.quantity;
-    if (dto.unitPrice !== undefined) item.unitPrice = dto.unitPrice;
-    if (dto.notes !== undefined) item.notes = dto.notes;
+    const data: any = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.quantity !== undefined) data.quantity = dto.quantity;
+    if (dto.unitPrice !== undefined) data.unitPrice = dto.unitPrice;
+    if (dto.notes !== undefined) data.notes = dto.notes;
 
-    const saved = await this.itemRepo.save(item);
+    const saved = await this.prisma.orderItem.update({
+      where: { id: itemId },
+      data,
+    });
+
     this.gateway.broadcastToOrder(orderId, 'item_updated', { orderId, item: saved });
     return saved;
   }
 
   async removeItem(orderId: number, itemId: number, userId: number): Promise<void> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
 
     if (order.status !== OrderStatus.OPEN) {
@@ -664,9 +731,9 @@ export class OrdersService {
       throw new BadRequestException('Order deadline has passed. You cannot delete items.');
     }
 
-    const item = await this.itemRepo.findOne({
-      where: { id: itemId, orderId },
-      relations: { participant: true },
+    const item = await this.prisma.orderItem.findFirst({
+      where: { id: itemId, orderId, deleted_at: null },
+      include: { participant: true },
     });
 
     if (!item) throw new NotFoundException(`Item #${itemId} not found in order #${orderId}`);
@@ -678,7 +745,11 @@ export class OrdersService {
       throw new ForbiddenException('You do not have permission to delete this item');
     }
 
-    await this.itemRepo.remove(item);
+    await this.prisma.orderItem.update({
+      where: { id: itemId },
+      data: { deleted_at: new Date() },
+    });
+
     this.gateway.broadcastToOrder(orderId, 'item_removed', { orderId, itemId });
   }
 
@@ -686,21 +757,21 @@ export class OrdersService {
     orderId: number,
     userId: number,
   ): Promise<{ participant: OrderParticipant | null; items: any[]; total: number }> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
 
-    const participant = await this.participantRepo.findOne({
-      where: { orderId, userId },
-      relations: { user: true },
+    const participant = await this.prisma.orderParticipant.findFirst({
+      where: { orderId, userId, deleted_at: null },
+      include: { user: true },
     });
 
     if (!participant) {
       return { participant: null, items: [], total: 0 };
     }
 
-    const items = await this.itemRepo.find({
-      where: { orderId, participantId: participant.id },
-      order: { createdAt: 'ASC' },
+    const items = await this.prisma.orderItem.findMany({
+      where: { orderId, participantId: participant.id, deleted_at: null },
+      orderBy: { createdAt: 'asc' },
     });
 
     const formattedItems = items.map((i) => ({
@@ -731,7 +802,7 @@ export class OrdersService {
     requestingUserId: number,
     dto: AddFrontPayerDto,
   ): Promise<OrderFrontPayer> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
 
     const canManage = await this.isUserOrderAdminOrCreator(orderId, requestingUserId, order);
@@ -743,17 +814,17 @@ export class OrdersService {
       );
     }
 
-    const user = await this.userRepo.findOne({ where: { id: dto.userId } });
+    const user = await this.prisma.user.findFirst({ where: { id: dto.userId, deleted_at: null } });
     if (!user) throw new NotFoundException(`User #${dto.userId} not found`);
 
-    const frontPayer = this.frontPayerRepo.create({
-      orderId,
-      userId: dto.userId,
-      amountPaid: dto.amountPaid,
-      notes: dto.notes,
+    const saved = await this.prisma.orderFrontPayer.create({
+      data: {
+        orderId,
+        userId: dto.userId,
+        amountPaid: dto.amountPaid,
+        notes: dto.notes,
+      },
     });
-
-    const saved = await this.frontPayerRepo.save(frontPayer);
 
     this.gateway.broadcastToOrder(orderId, 'front_payer_added', {
       orderId,
@@ -772,10 +843,10 @@ export class OrdersService {
   }
 
   async getFrontPayers(orderId: number): Promise<any[]> {
-    const frontPayers = await this.frontPayerRepo.find({
-      where: { orderId },
-      relations: { user: true },
-      order: { createdAt: 'ASC' },
+    const frontPayers = await this.prisma.orderFrontPayer.findMany({
+      where: { orderId, deleted_at: null },
+      include: { user: true },
+      orderBy: { createdAt: 'asc' },
     });
 
     return frontPayers.map((fp) => ({
@@ -796,7 +867,7 @@ export class OrdersService {
   // ---------------------------------------------------------------------------
 
   async getBillBreakdown(orderId: number): Promise<any> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
 
     if (order.status !== OrderStatus.SETTLING && order.status !== OrderStatus.COMPLETED) {
@@ -809,14 +880,22 @@ export class OrdersService {
   }
 
   private async calculateBillBreakdown(orderId: number): Promise<any> {
-    const order = await this.orderRepo.findOne({
-      where: { id: orderId },
-      relations: {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, deleted_at: null },
+      include: {
         creator: true,
         pickupHero: true,
-        participants: { user: true },
-        items: true,
-        frontPayers: { user: true },
+        participants: {
+          where: { deleted_at: null },
+          include: { user: true },
+        },
+        items: {
+          where: { deleted_at: null },
+        },
+        frontPayers: {
+          where: { deleted_at: null },
+          include: { user: true },
+        },
       },
     });
 
@@ -872,9 +951,9 @@ export class OrdersService {
     const grandTotal = Math.round((overallItemsTotal + deliveryFee) * 100) / 100;
 
     // Fetch existing reimbursements status
-    const reimbursements = await this.reimbursementRepo.find({
-      where: { orderId },
-      relations: { confirmedBy: true, paidToUser: true },
+    const reimbursements = await this.prisma.reimbursement.findMany({
+      where: { orderId, deleted_at: null },
+      include: { confirmedBy: true, paidToUser: true },
     });
 
     const reimbursementMap = new Map(reimbursements.map((r) => [r.participantId, r]));
@@ -967,40 +1046,46 @@ export class OrdersService {
     const amountGiven = dto.amountGiven !== undefined ? dto.amountGiven : amountDue;
     const changeDue = Math.max(0, Math.round((amountGiven - amountDue) * 100) / 100);
 
-    let reimbursement = await this.reimbursementRepo.findOne({
-      where: { orderId, participantId: participantData.participantId },
-    });
-
     const paymentMethod = dto.paymentMethod || PaymentMethod.CASH;
     const paidToUserId = dto.paidToUserId || breakdown.creatorId;
 
+    let reimbursement = await this.prisma.reimbursement.findFirst({
+      where: { orderId, participantId: participantData.participantId, deleted_at: null },
+    });
+
+    let saved: Reimbursement;
     if (!reimbursement) {
-      reimbursement = this.reimbursementRepo.create({
-        orderId,
-        participantId: participantData.participantId,
-        amountDue,
-        amountGiven,
-        changeDue,
-        isChangeReturned: changeDue === 0,
-        paidToUserId,
-        transactionReference: dto.transactionReference,
-        paymentMethod,
-        status: ReimbursementStatus.PAID_BY_PARTICIPANT,
-        paidAt: new Date(),
+      saved = await this.prisma.reimbursement.create({
+        data: {
+          orderId,
+          participantId: participantData.participantId,
+          amountDue,
+          amountGiven,
+          changeDue,
+          isChangeReturned: changeDue === 0,
+          paidToUserId,
+          transactionReference: dto.transactionReference,
+          paymentMethod,
+          status: ReimbursementStatus.PAID_BY_PARTICIPANT,
+          paidAt: new Date(),
+        },
       });
     } else {
-      reimbursement.amountDue = amountDue;
-      reimbursement.amountGiven = amountGiven;
-      reimbursement.changeDue = changeDue;
-      reimbursement.isChangeReturned = changeDue === 0;
-      reimbursement.paidToUserId = paidToUserId;
-      reimbursement.transactionReference = dto.transactionReference;
-      reimbursement.paymentMethod = paymentMethod;
-      reimbursement.status = ReimbursementStatus.PAID_BY_PARTICIPANT;
-      reimbursement.paidAt = new Date();
+      saved = await this.prisma.reimbursement.update({
+        where: { id: reimbursement.id },
+        data: {
+          amountDue,
+          amountGiven,
+          changeDue,
+          isChangeReturned: changeDue === 0,
+          paidToUserId,
+          transactionReference: dto.transactionReference,
+          paymentMethod,
+          status: ReimbursementStatus.PAID_BY_PARTICIPANT,
+          paidAt: new Date(),
+        },
+      });
     }
-
-    const saved = await this.reimbursementRepo.save(reimbursement);
 
     this.gateway.broadcastToOrder(orderId, 'payment_submitted', {
       orderId,
@@ -1023,11 +1108,11 @@ export class OrdersService {
     participantId: number,
     userId: number,
   ): Promise<Reimbursement> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
 
-    let reimbursement = await this.reimbursementRepo.findOne({
-      where: { orderId, participantId },
+    const reimbursement = await this.prisma.reimbursement.findFirst({
+      where: { orderId, participantId, deleted_at: null },
     });
 
     if (!reimbursement) {
@@ -1036,7 +1121,9 @@ export class OrdersService {
 
     const isCollector = reimbursement.paidToUserId === userId;
     const isCreator = order.creatorId === userId;
-    const isAdmin = await this.adminRepo.findOne({ where: { orderId, userId } });
+    const isAdmin = await this.prisma.orderAdmin.findFirst({
+      where: { orderId, userId, deleted_at: null },
+    });
 
     if (!isCollector && !isCreator && !isAdmin) {
       throw new ForbiddenException(
@@ -1044,9 +1131,13 @@ export class OrdersService {
       );
     }
 
-    reimbursement.isChangeReturned = true;
-    reimbursement.changeReturnedAt = new Date();
-    const saved = await this.reimbursementRepo.save(reimbursement);
+    const saved = await this.prisma.reimbursement.update({
+      where: { id: reimbursement.id },
+      data: {
+        isChangeReturned: true,
+        changeReturnedAt: new Date(),
+      },
+    });
 
     this.gateway.broadcastToOrder(orderId, 'change_returned', {
       orderId,
@@ -1063,17 +1154,19 @@ export class OrdersService {
     participantId: number,
     confirmerId: number,
   ): Promise<Reimbursement> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
 
-    let reimbursement = await this.reimbursementRepo.findOne({
-      where: { orderId, participantId },
+    let reimbursement = await this.prisma.reimbursement.findFirst({
+      where: { orderId, participantId, deleted_at: null },
     });
 
     const isPaidToConfirmer = reimbursement?.paidToUserId === confirmerId;
     const isPickupHero = order.pickupHeroId === confirmerId;
     const isCreator = order.creatorId === confirmerId;
-    const isAdmin = await this.adminRepo.findOne({ where: { orderId, userId: confirmerId } });
+    const isAdmin = await this.prisma.orderAdmin.findFirst({
+      where: { orderId, userId: confirmerId, deleted_at: null },
+    });
 
     if (!isPaidToConfirmer && !isPickupHero && !isCreator && !isAdmin) {
       throw new ForbiddenException(
@@ -1081,27 +1174,36 @@ export class OrdersService {
       );
     }
 
+    let saved: Reimbursement;
     if (!reimbursement) {
       const breakdown = await this.getBillBreakdown(orderId);
       const participantData = breakdown.participants.find(
         (p: any) => p.participantId === participantId,
       );
 
-      reimbursement = this.reimbursementRepo.create({
-        orderId,
-        participantId,
-        amountDue: participantData ? participantData.totalAmount : 0,
-        paymentMethod: PaymentMethod.CASH,
-        changeDue: 0,
-        isChangeReturned: true,
+      saved = await this.prisma.reimbursement.create({
+        data: {
+          orderId,
+          participantId,
+          amountDue: participantData ? participantData.totalAmount : 0,
+          paymentMethod: PaymentMethod.CASH,
+          changeDue: 0,
+          isChangeReturned: true,
+          status: ReimbursementStatus.CONFIRMED,
+          confirmedById: confirmerId,
+          confirmedAt: new Date(),
+        },
+      });
+    } else {
+      saved = await this.prisma.reimbursement.update({
+        where: { id: reimbursement.id },
+        data: {
+          status: ReimbursementStatus.CONFIRMED,
+          confirmedById: confirmerId,
+          confirmedAt: new Date(),
+        },
       });
     }
-
-    reimbursement.status = ReimbursementStatus.CONFIRMED;
-    reimbursement.confirmedById = confirmerId;
-    reimbursement.confirmedAt = new Date();
-
-    const saved = await this.reimbursementRepo.save(reimbursement);
 
     this.gateway.broadcastToOrder(orderId, 'payment_confirmed', {
       orderId,
@@ -1119,21 +1221,27 @@ export class OrdersService {
   @Cron(CronExpression.EVERY_30_SECONDS)
   async handleDeadlineChecks() {
     const now = new Date();
-    const expiredOrders = await this.orderRepo.find({
+    const expiredOrders = await this.prisma.order.findMany({
       where: {
         status: OrderStatus.OPEN,
-        deadline: LessThanOrEqual(now),
+        deadline: { lte: now },
+        deleted_at: null,
       },
     });
 
     for (const order of expiredOrders) {
-      order.status = OrderStatus.LOCKED;
-
-      if (!order.pickupHeroId) {
-        await this.tryAutoAssignPickupHero(order);
+      let heroId = order.pickupHeroId;
+      if (!heroId) {
+        heroId = (await this.tryAutoAssignPickupHero(order)) ?? null;
       }
 
-      await this.orderRepo.save(order);
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: {
+          status: OrderStatus.LOCKED,
+          pickupHeroId: heroId,
+        },
+      });
 
       this.gateway.broadcastToOrder(order.id, 'order_locked', {
         orderId: order.id,
@@ -1153,7 +1261,7 @@ export class OrdersService {
   // ---------------------------------------------------------------------------
 
   private async getOrderForManagement(orderId: number, userId: number): Promise<Order> {
-    const order = await this.orderRepo.findOne({ where: { id: orderId } });
+    const order = await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } });
     if (!order) throw new NotFoundException(`Order #${orderId} not found`);
 
     const hasPermission = await this.isUserOrderAdminOrCreator(orderId, userId, order);
@@ -1169,11 +1277,14 @@ export class OrdersService {
     userId: number,
     orderInstance?: Order,
   ): Promise<boolean> {
-    const order = orderInstance || (await this.orderRepo.findOne({ where: { id: orderId } }));
+    const order =
+      orderInstance || (await this.prisma.order.findFirst({ where: { id: orderId, deleted_at: null } }));
     if (!order) return false;
     if (order.creatorId === userId) return true;
 
-    const admin = await this.adminRepo.findOne({ where: { orderId, userId } });
+    const admin = await this.prisma.orderAdmin.findFirst({
+      where: { orderId, userId, deleted_at: null },
+    });
     return !!admin;
   }
 }

@@ -4,17 +4,13 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { User } from './user.entity';
-import { QueryFailedError, Repository } from 'typeorm';
+import { PrismaService } from '../prisma/prisma.service';
+import { Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async create(
     name: string,
@@ -29,23 +25,21 @@ export class UsersService {
       hashedPassword = await bcrypt.hash(password, 10);
     }
 
-    const user = this.userRepository.create({
-      name,
-      email,
-      password: hashedPassword,
-      avatar,
-      instapayHandle,
-      phoneNumber,
-    });
-
     try {
-      return await this.userRepository.save(user);
+      return await this.prisma.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          avatar,
+          instapayHandle,
+          phoneNumber,
+        },
+      });
     } catch (error) {
       if (
-        error instanceof QueryFailedError &&
-        (error.driverError as { code?: string } | undefined)?.code?.startsWith(
-          'SQLITE_CONSTRAINT',
-        )
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
       ) {
         throw new ConflictException('Email already in use');
       }
@@ -55,7 +49,9 @@ export class UsersService {
   }
 
   async findAll(): Promise<Omit<User, 'password'>[]> {
-    const users = await this.userRepository.find();
+    const users = await this.prisma.user.findMany({
+      where: { deleted_at: null },
+    });
     return users.map((u) => {
       const { password: _password, ...safeUser } = u;
       return safeUser as Omit<User, 'password'>;
@@ -63,11 +59,15 @@ export class UsersService {
   }
 
   async findById(id: number): Promise<User | null> {
-    return await this.userRepository.findOne({ where: { id } });
+    return await this.prisma.user.findFirst({
+      where: { id, deleted_at: null },
+    });
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    return await this.userRepository.findOne({ where: { email } });
+    return await this.prisma.user.findFirst({
+      where: { email, deleted_at: null },
+    });
   }
 
   async updateUser(
@@ -84,12 +84,18 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
-    if (updateData.name !== undefined) user.name = updateData.name;
-    if (updateData.avatar !== undefined) user.avatar = updateData.avatar;
-    if (updateData.instapayHandle !== undefined) user.instapayHandle = updateData.instapayHandle;
-    if (updateData.phoneNumber !== undefined) user.phoneNumber = updateData.phoneNumber;
-    if (updateData.hashedRefreshToken !== undefined) user.refreshToken = updateData.hashedRefreshToken;
-    return await this.userRepository.save(user);
+
+    const data: Prisma.UserUpdateInput = {};
+    if (updateData.name !== undefined) data.name = updateData.name;
+    if (updateData.avatar !== undefined) data.avatar = updateData.avatar;
+    if (updateData.instapayHandle !== undefined) data.instapayHandle = updateData.instapayHandle;
+    if (updateData.phoneNumber !== undefined) data.phoneNumber = updateData.phoneNumber;
+    if (updateData.hashedRefreshToken !== undefined) data.refreshToken = updateData.hashedRefreshToken;
+
+    return await this.prisma.user.update({
+      where: { id },
+      data,
+    });
   }
 
   async deleteUser(id: number): Promise<void> {
@@ -97,15 +103,23 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
-    await this.userRepository.delete(id);
+    await this.prisma.user.update({
+      where: { id },
+      data: { deleted_at: new Date() },
+    });
   }
 
   async findCustom(emailDomain: string): Promise<Omit<User, 'password'>[]> {
-    const users = await this.userRepository
-      .createQueryBuilder('user')
-      .where('user.email LIKE :domain', { domain: `%${emailDomain}` })
-      .orderBy('user.id', 'DESC')
-      .getMany();
+    const users = await this.prisma.user.findMany({
+      where: {
+        email: {
+          endsWith: emailDomain,
+          mode: 'insensitive',
+        },
+        deleted_at: null,
+      },
+      orderBy: { id: 'desc' },
+    });
 
     return users.map((u) => {
       const { password: _password, ...safeUser } = u;
@@ -114,14 +128,17 @@ export class UsersService {
   }
 
   async searchUsers(query: string): Promise<Omit<User, 'password'>[]> {
-    const users = await this.userRepository
-      .createQueryBuilder('user')
-      .where('user.name LIKE :query OR user.email LIKE :query', {
-        query: `%${query}%`,
-      })
-      .orderBy('user.name', 'ASC')
-      .take(20)
-      .getMany();
+    const users = await this.prisma.user.findMany({
+      where: {
+        deleted_at: null,
+        OR: [
+          { name: { contains: query, mode: 'insensitive' } },
+          { email: { contains: query, mode: 'insensitive' } },
+        ],
+      },
+      orderBy: { name: 'asc' },
+      take: 20,
+    });
 
     return users.map((u) => {
       const { password: _password, ...safeUser } = u;

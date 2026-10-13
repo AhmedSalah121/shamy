@@ -1,5 +1,5 @@
 import { IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
-import { PaymentMethod } from '../entities/reimbursement.entity';
+import { PaymentMethod } from '@prisma/client';
 
 export class PayCashDto {
   @IsEnum(PaymentMethod)

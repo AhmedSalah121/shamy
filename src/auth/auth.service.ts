@@ -66,8 +66,7 @@ export class AuthService {
 
     const accessSecret =
       process.env.JWT_ACCESS_SECRET ||
-      process.env.JWT_SECRET ||
-      'shamy_jwt_secret_key_2026';
+      process.env.JWT_SECRET;
     const refreshSecret =
       process.env.JWT_REFRESH_SECRET ||
       'shamy_jwt_refresh_secret_key_2026';
