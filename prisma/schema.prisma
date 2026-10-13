@@ -1,0 +1,204 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum OrderStatus {
+  DRAFT
+  OPEN
+  LOCKED
+  ORDERED
+  DELIVERED
+  SETTLING
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderVisibility {
+  PUBLIC
+  VIP
+}
+
+enum FeeSplitType {
+  EQUAL
+  PROPORTIONAL
+}
+
+enum PaymentMethod {
+  CASH
+  INSTAPAY
+  VODAFONE_CASH
+  ONLINE
+}
+
+enum ReimbursementStatus {
+  PENDING
+  PAID_BY_PARTICIPANT
+  CONFIRMED
+}
+
+model User {
+  id             Int       @id @default(autoincrement())
+  name           String
+  email          String    @unique
+  password       String?
+  avatar         String?
+  instapayHandle String?
+  phoneNumber    String?
+  refreshToken   String?
+  createdAt      DateTime  @default(now()) @map("createdAt")
+  updatedAt      DateTime  @updatedAt @map("updatedAt")
+  deleted_at     DateTime?
+
+  createdOrders         Order[]            @relation("OrderCreator")
+  pickupOrders          Order[]            @relation("OrderPickupHero")
+  adminRoles            OrderAdmin[]
+  participations        OrderParticipant[]
+  paidReimbursements    Reimbursement[]    @relation("ReimbursementPaidToUser")
+  confirmedReimbursements Reimbursement[]  @relation("ReimbursementConfirmedBy")
+  frontPayers           OrderFrontPayer[]
+
+  @@map("users")
+}
+
+model Notification {
+  id         Int       @id @default(autoincrement())
+  sender     String
+  reciever   String
+  created_at DateTime  @default(now())
+  read_at    DateTime?
+  deleted_at DateTime?
+
+  @@map("notification")
+}
+
+model Order {
+  id                   Int             @id @default(autoincrement())
+  title                String
+  description          String?
+  status               OrderStatus     @default(OPEN)
+  visibility           OrderVisibility @default(PUBLIC)
+  vipPassword          String?
+  vipInviteCode        String?         @unique
+  deadline             DateTime?
+  feeSplitType         FeeSplitType    @default(EQUAL)
+  deliveryFee          Float           @default(0)
+  serviceFee           Float           @default(0)
+  discount             Float           @default(0)
+  restaurantName       String?
+  restaurantPhone      String?
+  menuUrl              String?
+  menuImageUrl         String?
+  hideParticipantItems Boolean         @default(false)
+  creatorId            Int
+  pickupHeroId         Int?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  deleted_at           DateTime?
+
+  creator      User               @relation("OrderCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  pickupHero   User?              @relation("OrderPickupHero", fields: [pickupHeroId], references: [id], onDelete: SetNull)
+  admins       OrderAdmin[]
+  participants OrderParticipant[]
+  items        OrderItem[]
+  frontPayers  OrderFrontPayer[]
+  reimbursements Reimbursement[]
+
+  @@map("orders")
+}
+
+model OrderAdmin {
+  id         Int       @id @default(autoincrement())
+  orderId    Int
+  userId     Int
+  assignedAt DateTime  @default(now())
+  deleted_at DateTime?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, userId])
+  @@map("order_admins")
+}
+
+model OrderParticipant {
+  id         Int       @id @default(autoincrement())
+  orderId    Int
+  userId     Int
+  joinedAt   DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deleted_at DateTime?
+
+  order          Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items          OrderItem[]
+  reimbursements Reimbursement[]
+
+  @@unique([orderId, userId])
+  @@map("order_participants")
+}
+
+model OrderItem {
+  id            Int       @id @default(autoincrement())
+  orderId       Int
+  participantId Int
+  name          String
+  quantity      Int       @default(1)
+  unitPrice     Float
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deleted_at    DateTime?
+
+  order       Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  participant OrderParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+model Reimbursement {
+  id                   Int                 @id @default(autoincrement())
+  orderId              Int
+  participantId        Int
+  amountDue            Float
+  amountGiven          Float?
+  changeDue            Float               @default(0)
+  isChangeReturned     Boolean             @default(false)
+  changeReturnedAt     DateTime?
+  paymentMethod        PaymentMethod       @default(CASH)
+  paidToUserId         Int?
+  transactionReference String?
+  status               ReimbursementStatus @default(PENDING)
+  paidAt               DateTime?
+  confirmedById        Int?
+  confirmedAt          DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  deleted_at           DateTime?
+
+  order       Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  participant OrderParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  paidToUser  User?            @relation("ReimbursementPaidToUser", fields: [paidToUserId], references: [id], onDelete: SetNull)
+  confirmedBy User?            @relation("ReimbursementConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+
+  @@map("reimbursements")
+}
+
+model OrderFrontPayer {
+  id         Int       @id @default(autoincrement())
+  orderId    Int
+  userId     Int
+  amountPaid Float
+  notes      String?
+  createdAt  DateTime  @default(now())
+  deleted_at DateTime?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("order_front_payers")
+}
