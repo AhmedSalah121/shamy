@@ -10,7 +10,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
-import { Notification } from './entities/notification.entity';
+import { Notification } from '@prisma/client';
 
 @WebSocketGateway({
   cors: {

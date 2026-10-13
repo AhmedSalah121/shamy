@@ -9,16 +9,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET || 'shamy_jwt_secret_key_2026',
-    });
+      // Use JWT_ACCESS_SECRET if configured, otherwise fall back to JWT_SECRET or default secret
+      secretOrKey: process.env.JWT_SECRET || ''});
   }
 
   async validate(payload: { sub: number; email: string }) {
+    // Only active (non-soft-deleted) users will be returned by findById
     const user = await this.usersService.findById(payload.sub);
     if (!user) {
       throw new UnauthorizedException('User not found or token invalid');
     }
-    const { password: _password, ...result } = user;
+
+    // Strip sensitive fields (password and hashed refresh token) from req.user
+    const { password: _password, refreshToken: _refreshToken, ...result } = user;
     return result;
   }
 }

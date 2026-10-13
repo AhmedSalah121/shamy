@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "nest start --watch",
     "build": "nest build",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
     "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -35,13 +37,12 @@
     "@nestjs/platform-express": "^12.0.1",
     "@nestjs/platform-socket.io": "^12.1.0",
     "@nestjs/schedule": "^12.0.2",
-    "@nestjs/typeorm": "^12.0.1",
     "@nestjs/websockets": "^12.1.0",
+    "@prisma/client": "^6.19.3",
     "@types/bcryptjs": "^3.0.0",
     "@types/multer": "^2.3.0",
     "@types/passport-jwt": "^4.0.1",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.11.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "graphql": "^16.14.2",
@@ -52,9 +53,7 @@
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.4",
     "socket.io-client": "^4.8.4",
-    "sqlite3": "^6.0.1",
-    "tsc": "^2.0.3",
-    "typeorm": "^1.1.1"
+    "tsc": "^2.0.3"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
@@ -69,6 +68,7 @@
     "oxlint": "^1.58.0",
     "oxlint-tsgolint": "^7.0.2001",
     "prettier": "^3.4.2",
+    "prisma": "^6.19.3",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "^29.4.0",

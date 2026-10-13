@@ -1,31 +1,43 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
-import { Notification } from './entities/notification.entity';
+import { Notification } from '@prisma/client';
 
 @Injectable()
 export class NotificationsService {
-  constructor(
-    @InjectRepository(Notification)
-    private readonly notificationRepository: Repository<Notification>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async createNotification(dto: CreateNotificationDto): Promise<Notification> {
-    const notification = new Notification(dto.sender, dto.reciever);
-    return this.notificationRepository.save(notification);
+    return await this.prisma.notification.create({
+      data: {
+        sender: dto.sender,
+        reciever: dto.reciever,
+      },
+    });
   }
 
   async getUserNotifications(reciever: string): Promise<Notification[]> {
-    return this.notificationRepository.find({ where: { reciever }});
+    return await this.prisma.notification.findMany({
+      where: {
+        reciever,
+        deleted_at: null,
+      },
+    });
   }
 
   async markAsRead(id: number): Promise<Notification | null> {
-    const notification = await this.notificationRepository.findOne({ where: { id }});
+    const notification = await this.prisma.notification.findFirst({
+      where: { id, deleted_at: null },
+    });
     if (!notification) {
       throw new NotFoundException(`Notification with ID ${id} not found`);
     }
-    notification.read_at = new Date();
-    return await this.notificationRepository.save(notification);
+
+    return await this.prisma.notification.update({
+      where: { id },
+      data: {
+        read_at: new Date(),
+      },
+    });
   }
 }

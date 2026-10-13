@@ -8,7 +8,7 @@ import {
   IsString,
   Min,
 } from 'class-validator';
-import { FeeSplitType, OrderVisibility } from '../entities/order.entity';
+import { FeeSplitType, OrderVisibility } from '@prisma/client';
 
 export class CreateOrderDto {
   @IsString()

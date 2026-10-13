@@ -13,8 +13,7 @@ import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { User } from '../users/user.entity';
-
+import { User, OrderStatus } from '@prisma/client';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
@@ -24,7 +23,6 @@ import { UpdateItemDto } from './dto/update-item.dto';
 import { AssignAdminDto } from './dto/assign-admin.dto';
 import { PayCashDto } from './dto/reimbursement.dto';
 import { AddFrontPayerDto } from './dto/front-payer.dto';
-import { OrderStatus } from './entities/order.entity';
 
 @Controller('orders')
 export class OrdersController {
