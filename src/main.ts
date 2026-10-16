@@ -32,7 +32,23 @@ async function bootstrap() {
   });
 
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-  await app.listen(port, '0.0.0.0');
-  console.log(`Application is running on: http://0.0.0.0:${port}`);
+  if (process.env.VERCEL !== '1') {
+    await app.listen(port, '0.0.0.0');
+    console.log(`Application is running on: http://0.0.0.0:${port}`);
+  }
+
+  await app.init();
+  return app.getHttpAdapter().getInstance();
 }
-void bootstrap();
+
+let server: any;
+export default async function handler(req: any, res: any) {
+  if (!server) {
+    server = await bootstrap();
+  }
+  return server(req, res);
+}
+
+if (process.env.VERCEL !== '1') {
+  void bootstrap();
+}
