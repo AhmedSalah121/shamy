@@ -1,39 +1,60 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { NestExpressApplication } from '@nestjs/platform-express';
-import type { Express } from 'express';
-import type { IncomingMessage, ServerResponse } from 'http';
+import { ExpressAdapter, NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from '../src/app.module';
+import express from 'express';
+import { join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 
-let server: Express;
+const server = express();
+let isInitialized = false;
 
-async function bootstrap(): Promise<Express> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+async function bootstrap() {
+  if (!isInitialized) {
+    const uploadDir = join(process.cwd(), 'uploads');
+    try {
+      if (!existsSync(uploadDir)) {
+        mkdirSync(uploadDir, { recursive: true });
+      }
+    } catch {
+      // In read-only serverless environment, ignore filesystem error
+    }
 
-  app.enableCors({
-    origin: '*',
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
-  });
+    const app = await NestFactory.create<NestExpressApplication>(
+      AppModule,
+      new ExpressAdapter(server),
+    );
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: false,
-    }),
-  );
+    // Mirror CORS, global pipes, and configurations from src/main.ts
+    app.enableCors({
+      origin: '*',
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      credentials: true,
+    });
 
-  await app.init();
-  return app.getHttpAdapter().getInstance() as Express;
+    app.useGlobalPipes(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: false,
+      }),
+    );
+
+    try {
+      app.useStaticAssets(uploadDir, {
+        prefix: '/uploads/',
+      });
+    } catch {
+      // Ignore static asset directory errors in serverless environments
+    }
+
+    await app.init();
+    isInitialized = true;
+  }
+  return server;
 }
 
-export default async function handler(
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  if (!server) {
-    server = await bootstrap();
-  }
-  server(req, res);
+export default async function handler(req: any, res: any) {
+  const appServer = await bootstrap();
+  return appServer(req, res);
 }

@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "nest start --watch",
     "build": "prisma generate && tsc -p tsconfig.build.json",
-    "vercel-build": "prisma generate && ncc build api/index.ts -o .vercel-dist",
+    "postinstall": "prisma generate",
+    "vercel-build": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "deploy": "nest deploy",
@@ -62,7 +63,6 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
-    "@vercel/ncc": "^0.45.0",
     "jest": "^30.0.0",
     "oxlint": "^1.58.0",
     "oxlint-tsgolint": "^7.0.2001",
