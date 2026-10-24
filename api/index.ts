@@ -1,7 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ExpressAdapter, NestExpressApplication } from '@nestjs/platform-express';
-import { AppModule } from '../src/app.module';
 import express from 'express';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
@@ -11,21 +10,28 @@ let isInitialized = false;
 
 async function bootstrap() {
   if (!isInitialized) {
-    const uploadDir = join(process.cwd(), 'uploads');
+    // Vercel's /var/task is read-only; /tmp is the only writable directory
+    const uploadDir = process.env.VERCEL
+      ? join('/tmp', 'uploads')
+      : join(process.cwd(), 'uploads');
+
     try {
       if (!existsSync(uploadDir)) {
         mkdirSync(uploadDir, { recursive: true });
       }
     } catch {
-      // In read-only serverless environment, ignore filesystem error
+      // Ignore filesystem error if read-only
     }
+
+    // Load AppModule inside bootstrap so import-time errors are caught by handler's try/catch
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { AppModule } = require('../src/app.module');
 
     const app = await NestFactory.create<NestExpressApplication>(
       AppModule,
       new ExpressAdapter(server),
     );
 
-    // Mirror CORS, global pipes, and configurations from src/main.ts
     app.enableCors({
       origin: '*',
       methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
@@ -45,7 +51,7 @@ async function bootstrap() {
         prefix: '/uploads/',
       });
     } catch {
-      // Ignore static asset directory errors in serverless environments
+      // Ignore static asset errors in serverless
     }
 
     await app.init();
@@ -55,6 +61,16 @@ async function bootstrap() {
 }
 
 export default async function handler(req: any, res: any) {
-  const appServer = await bootstrap();
-  return appServer(req, res);
+  try {
+    const appServer = await bootstrap();
+    return appServer(req, res);
+  } catch (err: any) {
+    console.error('Vercel NestJS Bootstrap Crash:', err);
+    return res.status(500).json({
+      statusCode: 500,
+      error: 'BOOTSTRAP_FAILED',
+      message: err?.message || String(err),
+      stack: err?.stack?.split('\n'),
+    });
+  }
 }

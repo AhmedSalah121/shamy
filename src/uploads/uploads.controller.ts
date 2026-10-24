@@ -12,11 +12,6 @@ import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
-const uploadDir = join(process.cwd(), 'uploads');
-if (!existsSync(uploadDir)) {
-  mkdirSync(uploadDir, { recursive: true });
-}
-
 @Controller('uploads')
 export class UploadsController {
   @UseGuards(JwtAuthGuard)
@@ -25,7 +20,13 @@ export class UploadsController {
     FileInterceptor('file', {
       storage: diskStorage({
         destination: (req, file, cb) => {
-          cb(null, uploadDir);
+          const dir = process.env.VERCEL
+            ? join('/tmp', 'uploads')
+            : join(process.cwd(), 'uploads');
+          if (!existsSync(dir)) {
+            mkdirSync(dir, { recursive: true });
+          }
+          cb(null, dir);
         },
         filename: (req, file, cb) => {
           const randomName = Array(32)

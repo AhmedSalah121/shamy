@@ -6,7 +6,9 @@ import { existsSync, mkdirSync } from 'fs';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const uploadDir = join(process.cwd(), 'uploads');
+  const uploadDir = process.env.VERCEL
+    ? join('/tmp', 'uploads')
+    : join(process.cwd(), 'uploads');
   if (!existsSync(uploadDir)) {
     mkdirSync(uploadDir, { recursive: true });
   }
