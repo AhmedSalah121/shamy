@@ -6,17 +6,10 @@ import { existsSync, mkdirSync } from 'fs';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const uploadDir = process.env.VERCEL
-    ? join('/tmp', 'uploads')
-    : join(process.cwd(), 'uploads');
-  if (!existsSync(uploadDir)) {
-    mkdirSync(uploadDir, { recursive: true });
-  }
-
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.enableCors({
-    origin: '*',
+    origin: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
@@ -29,12 +22,18 @@ async function bootstrap() {
     }),
   );
 
-  app.useStaticAssets(uploadDir, {
-    prefix: '/uploads/',
-  });
+  if (!process.env.VERCEL) {
+    const uploadDir = join(process.cwd(), 'uploads');
+    if (!existsSync(uploadDir)) {
+      mkdirSync(uploadDir, { recursive: true });
+    }
+    app.useStaticAssets(uploadDir, {
+      prefix: '/uploads/',
+    });
+  }
 
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-  await app.listen(port, '0.0.0.0');
-  console.log(`Application is running on: http://0.0.0.0:${port}`);
+  await app.listen(port);
+  console.log(`Application is running on: http://localhost:${port}`);
 }
 void bootstrap();

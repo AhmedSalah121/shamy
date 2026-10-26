@@ -1,23 +1,21 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
-    "moduleResolution": "node10",
-    "ignoreDeprecations": "6.0",
-    "esModuleInterop": true,
-    "isolatedModules": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "target": "ES2022",
-    "types": ["node", "jest"],
     "sourceMap": true,
     "outDir": "./dist",
     "rootDir": ".",
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
-    "strictPropertyInitialization": false
+    "strictPropertyInitialization": false,
+    "types": ["node", "jest"],
+    "esModuleInterop": true
   }
 }
