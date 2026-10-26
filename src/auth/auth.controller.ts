@@ -1,11 +1,11 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AuthService } from './auth.service.js';
+import { RegisterDto } from './dto/register.dto.js';
+import { LoginDto } from './dto/login.dto.js';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { User } from '@prisma/client';
-import { JwtRefreshGuard } from '../common/guards/jwt-refresh-guard';
+import { JwtRefreshGuard } from '../common/guards/jwt-refresh-guard.js';
 
 @Controller('auth')
 export class AuthController {

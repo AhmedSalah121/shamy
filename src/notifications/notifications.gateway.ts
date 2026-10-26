@@ -8,8 +8,8 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { NotificationsService } from './notifications.service';
-import { CreateNotificationDto } from './dto/create-notification.dto';
+import { NotificationsService } from './notifications.service.js';
+import { CreateNotificationDto } from './dto/create-notification.dto.js';
 import { Notification } from '@prisma/client';
 
 @WebSocketGateway({

@@ -9,20 +9,20 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { OrdersService } from './orders.service';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { OrdersService } from './orders.service.js';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard.js';
+import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { OrderStatus, User } from '@prisma/client';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderDto } from './dto/update-order.dto';
-import { UpdateStatusDto } from './dto/update-status.dto';
-import { JoinOrderDto } from './dto/join-order.dto';
-import { AddItemDto } from './dto/add-item.dto';
-import { UpdateItemDto } from './dto/update-item.dto';
-import { AssignAdminDto } from './dto/assign-admin.dto';
-import { PayCashDto } from './dto/reimbursement.dto';
-import { AddFrontPayerDto } from './dto/front-payer.dto';
+import { CreateOrderDto } from './dto/create-order.dto.js';
+import { UpdateOrderDto } from './dto/update-order.dto.js';
+import { UpdateStatusDto } from './dto/update-status.dto.js';
+import { JoinOrderDto } from './dto/join-order.dto.js';
+import { AddItemDto } from './dto/add-item.dto.js';
+import { UpdateItemDto } from './dto/update-item.dto.js';
+import { AssignAdminDto } from './dto/assign-admin.dto.js';
+import { PayCashDto } from './dto/reimbursement.dto.js';
+import { AddFrontPayerDto } from './dto/front-payer.dto.js';
 
 @Controller('orders')
 export class OrdersController {

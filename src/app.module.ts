@@ -1,15 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
-
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-
-import { PrismaModule } from './prisma/prisma.module';
-import { UsersModule } from './users/users.module';
-import { NotificationsModule } from './notifications/notifications.module';
-import { AuthModule } from './auth/auth.module';
-import { OrdersModule } from './orders/orders.module';
-import { UploadsModule } from './uploads/uploads.module';
+import { AppController } from './app.controller.js';
+import { AppService } from './app.service.js';
+import { PrismaModule } from './prisma/prisma.module.js';
+import { UsersModule } from './users/users.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
+import { AuthModule } from './auth/auth.module.js';
+import { OrdersModule } from './orders/orders.module.js';
+import { UploadsModule } from './uploads/uploads.module.js';
 
 @Module({
   imports: [

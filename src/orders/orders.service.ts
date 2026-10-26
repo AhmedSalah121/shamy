@@ -21,16 +21,16 @@ import {
   ReimbursementStatus,
   User,
 } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationsGateway } from '../notifications/notifications.gateway.js';
 
-import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderDto } from './dto/update-order.dto';
-import { JoinOrderDto } from './dto/join-order.dto';
-import { AddItemDto } from './dto/add-item.dto';
-import { UpdateItemDto } from './dto/update-item.dto';
-import { PayCashDto } from './dto/reimbursement.dto';
-import { AddFrontPayerDto } from './dto/front-payer.dto';
+import { CreateOrderDto } from './dto/create-order.dto.js';
+import { UpdateOrderDto } from './dto/update-order.dto.js';
+import { JoinOrderDto } from './dto/join-order.dto.js';
+import { AddItemDto } from './dto/add-item.dto.js';
+import { UpdateItemDto } from './dto/update-item.dto.js';
+import { PayCashDto } from './dto/reimbursement.dto.js';
+import { AddFrontPayerDto } from './dto/front-payer.dto.js';
 
 @Injectable()
 export class OrdersService {
