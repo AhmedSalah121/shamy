@@ -64,12 +64,8 @@ export class AuthService {
   private async generateTokens(userId: number, email: string) {
     const payload = { sub: userId, email };
 
-    const accessSecret =
-      process.env.JWT_ACCESS_SECRET ||
-      process.env.JWT_SECRET;
-    const refreshSecret =
-      process.env.JWT_REFRESH_SECRET ||
-      'shamy_jwt_refresh_secret_key_2026';
+    const accessSecret = process.env.JWT_SECRET || '';
+    const refreshSecret = process.env.JWT_REFRESH_SECRET || '';
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
