@@ -24,11 +24,6 @@ enum OrderVisibility {
   VIP
 }
 
-enum FeeSplitType {
-  EQUAL
-  PROPORTIONAL
-}
-
 enum PaymentMethod {
   CASH
   INSTAPAY
@@ -86,7 +81,6 @@ model Order {
   vipPassword          String?
   vipInviteCode        String?         @unique
   deadline             DateTime?
-  feeSplitType         FeeSplitType    @default(EQUAL)
   deliveryFee          Float           @default(0)
   serviceFee           Float           @default(0)
   discount             Float           @default(0)

@@ -8,7 +8,6 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import * as crypto from 'crypto';
 
 import {
-  FeeSplitType,
   Order,
   OrderAdmin,
   OrderFrontPayer,
@@ -89,7 +88,7 @@ export class OrdersService {
     return this.getOrderDetails(savedOrder.id, creatorId);
   }
 
-  async getOrders(userId?: number): Promise<Order[]> {
+  async getOrders(userId?: number): Promise<any[]> {
     const whereCondition: any = {
       deleted_at: null,
     };
@@ -107,52 +106,183 @@ export class OrdersService {
 
     const orders = await this.prisma.order.findMany({
       where: whereCondition,
-      include: {
-        creator: true,
-        pickupHero: true,
-        admins: {
-          where: { deleted_at: null },
-          include: { user: true },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        status: true,
+        visibility: true,
+        deadline: true,
+        deliveryFee: true,
+        serviceFee: true,
+        discount: true,
+        restaurantName: true,
+        restaurantPhone: true,
+        menuUrl: true,
+        menuImageUrl: true,
+        creatorId: true,
+        pickupHeroId: true,
+        createdAt: true,
+        updatedAt: true,
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+          },
+        },
+        pickupHero: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+          },
         },
         participants: {
           where: { deleted_at: null },
-          include: { user: true },
+          select: {
+            id: true,
+            userId: true,
+            user: {
+              select: {
+                name: true,
+                avatar: true,
+              },
+            },
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return orders.map((o) => {
-      const { vipPassword: _vipPassword, ...safe } = o;
-      return safe as unknown as Order;
-    });
+    return orders;
   }
 
   async getOrderDetails(orderId: number, requestingUserId?: number): Promise<any> {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, deleted_at: null },
-      include: {
-        creator: true,
-        pickupHero: true,
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        status: true,
+        visibility: true,
+        vipInviteCode: true,
+        vipPassword: true,
+        deadline: true,
+        deliveryFee: true,
+        serviceFee: true,
+        discount: true,
+        restaurantName: true,
+        restaurantPhone: true,
+        menuUrl: true,
+        menuImageUrl: true,
+        hideParticipantItems: true,
+        creatorId: true,
+        pickupHeroId: true,
+        createdAt: true,
+        updatedAt: true,
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+            phoneNumber: true,
+            instapayHandle: true,
+          },
+        },
+        pickupHero: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+            phoneNumber: true,
+            instapayHandle: true,
+          },
+        },
         admins: {
           where: { deleted_at: null },
-          include: { user: true },
+          select: {
+            id: true,
+            orderId: true,
+            userId: true,
+            assignedAt: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                avatar: true,
+              },
+            },
+          },
         },
         participants: {
           where: { deleted_at: null },
-          include: { user: true },
+          select: {
+            id: true,
+            orderId: true,
+            userId: true,
+            joinedAt: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                avatar: true,
+                phoneNumber: true,
+                instapayHandle: true,
+              },
+            },
+          },
         },
         items: {
           where: { deleted_at: null },
-          include: {
+          select: {
+            id: true,
+            orderId: true,
+            participantId: true,
+            name: true,
+            quantity: true,
+            unitPrice: true,
+            notes: true,
+            createdAt: true,
+            updatedAt: true,
             participant: {
-              include: { user: true },
+              select: {
+                id: true,
+                orderId: true,
+                userId: true,
+                joinedAt: true,
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    avatar: true,
+                  },
+                },
+              },
             },
           },
         },
         frontPayers: {
           where: { deleted_at: null },
-          include: { user: true },
+          select: {
+            id: true,
+            orderId: true,
+            userId: true,
+            amountPaid: true,
+            notes: true,
+            createdAt: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                avatar: true,
+                phoneNumber: true,
+                instapayHandle: true,
+              },
+            },
+          },
         },
       },
     });

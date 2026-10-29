@@ -8,7 +8,7 @@ import {
   IsString,
   Min,
 } from 'class-validator';
-import { FeeSplitType, OrderVisibility } from '@prisma/client';
+import { OrderVisibility } from '@prisma/client';
 
 export class CreateOrderDto {
   @IsString()
@@ -30,10 +30,6 @@ export class CreateOrderDto {
   @IsDateString()
   @IsOptional()
   deadline?: string;
-
-  @IsEnum(FeeSplitType)
-  @IsOptional()
-  feeSplitType?: FeeSplitType;
 
   @IsNumber()
   @Min(0)
