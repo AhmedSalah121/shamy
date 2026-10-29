@@ -1,28 +1,33 @@
-import { Controller, Get, Post, Body, Param, ParseIntPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Param,
+  ParseIntPipe,
+  UseGuards,
+} from '@nestjs/common';
 import { NotificationsService } from './notifications.service.js';
-import { NotificationsGateway } from './notifications.gateway.js';
-import { CreateNotificationDto } from './dto/create-notification.dto.js';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { User } from '@prisma/client';
 
 @Controller('notifications')
+@UseGuards(JwtAuthGuard)
 export class NotificationsController {
-  constructor(
-    private readonly notificationsService: NotificationsService,
-    private readonly notificationsGateway: NotificationsGateway,
-  ) {}
+  constructor(private readonly notificationsService: NotificationsService) {}
 
-  @Post('send')
-  sendNotification(@Body() dto: CreateNotificationDto) {
-    // Triggers both the database write and real-time socket delivery
-    return this.notificationsGateway.sendNotificationToUser(dto);
+  // GET /notifications - Get notifications for the authenticated user
+  @Get()
+  async getNotifications(@CurrentUser() user: User) {
+    return this.notificationsService.getUserNotificationsForUser(user);
   }
 
-  @Get(':user')
-  getUserNotifications(@Param('user') user: string) {
-    return this.notificationsService.getUserNotifications(user);
-  }
-
-  @Post(':id/read')
-  markAsRead(@Param('id', ParseIntPipe) id: number) {
-    return this.notificationsService.markAsRead(id);
+  // PATCH /notifications/:id/read - Mark notification as read (with user ownership check)
+  @Patch(':id/read')
+  async markAsRead(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
+    return this.notificationsService.markAsRead(id, user);
   }
 }
