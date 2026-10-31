@@ -48,6 +48,7 @@ export class OrdersService {
         ? crypto.randomBytes(6).toString('hex')
         : undefined;
 
+    // Atomically create the order session and auto-join the creator as participant #1
     const savedOrder = await this.prisma.order.create({
       data: {
         title: dto.title,
@@ -67,14 +68,55 @@ export class OrdersService {
         creatorId,
         pickupHeroId: dto.pickupHeroId,
         status: OrderStatus.OPEN,
+        participants: {
+          create: {
+            userId: creatorId,
+          },
+        },
       },
-    });
-
-    // Auto-join creator as initial participant
-    await this.prisma.orderParticipant.create({
-      data: {
-        orderId: savedOrder.id,
-        userId: creatorId,
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        status: true,
+        visibility: true,
+        vipInviteCode: true,
+        deadline: true,
+        deliveryFee: true,
+        serviceFee: true,
+        discount: true,
+        restaurantName: true,
+        restaurantPhone: true,
+        menuUrl: true,
+        menuImageUrl: true,
+        hideParticipantItems: true,
+        creatorId: true,
+        pickupHeroId: true,
+        createdAt: true,
+        updatedAt: true,
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+            phoneNumber: true,
+            instapayHandle: true,
+          },
+        },
+        participants: {
+          select: {
+            id: true,
+            userId: true,
+            joinedAt: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                avatar: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -85,7 +127,7 @@ export class OrdersService {
       creatorId,
     });
 
-    return this.getOrderDetails(savedOrder.id, creatorId);
+    return savedOrder;
   }
 
   async getOrders(userId?: number): Promise<any[]> {
